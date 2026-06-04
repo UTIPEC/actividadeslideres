@@ -13,12 +13,10 @@ services:
     image: mysql:8.0
     restart: always
     environment:
-     MYSQL_ROOT_PASSWORD: Utipec2026*$
-     MYSQL_DATABASE: indicadores
-     MYSQL_USER: root
-     MYSQL_PASSWORD: Utipec2026*$
+      MYSQL_ROOT_PASSWORD: 'Utipec2026*$'
+      MYSQL_DATABASE: indicadores
     volumes:
-      - mysql_data:/var/lib/mysql
+      - mysql_data_nueva:/var/lib/mysql
 
   phpmyadmin:
     image: phpmyadmin:latest
@@ -28,4 +26,4 @@ services:
       PMA_PORT: 3306
 
 volumes:
-  mysql_data:
+  mysql_data_nueva:
