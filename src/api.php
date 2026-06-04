@@ -12,9 +12,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 }
 
 // Configuración de la base de datos
-$db_host = '173.201.182.15';
-$db_user = 'rootactualizacion';     
-$db_pass = 'Utipec2025*';
+$db_host = 'bd';
+$db_user = 'root';     
+$db_pass = 'Utipec2026*$';
 $db_name = 'indicadores';
 
 // Conexión segura con PDO
