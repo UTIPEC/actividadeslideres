@@ -1,5 +1,5 @@
 <?php
-$db_host = 'bd';
+$db_host = '2.25.137.200';
 $db_user = 'root';     
 $db_pass = 'Utipec2026*$';
 $db_name = 'indicadores';
