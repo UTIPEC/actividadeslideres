@@ -1,0 +1,2446 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Colaborativo de Actividades - Conexión API MySQL</title>
+  
+  <!-- Tailwind CSS CDN para diseño moderno y responsivo -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React y ReactDOM para interactividad reactiva -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Babel Standalone para compilar JSX directamente en el navegador de Google Sites -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    /* Personalización de scrollbars elegantes para el tema gris claro */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    @keyframes slideInUp {
+      from {
+        transform: translateY(20px);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+    .animate-slide-in-up {
+      animation: slideInUp 0.35s ease-out forwards;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen">
+
+  <!-- Elemento raíz de la aplicación -->
+  <div id="root"></div>
+
+  <!-- Script JSX compilado con Babel en caliente -->
+  <script type="text/babel">
+    const { useState, useMemo, useEffect } = React;
+
+    // =========================================================================
+    // CONFIGURACIÓN DE TU BACKEND PHP PARA MYSQL
+    // Para conectar con tu servidor 173.201.182.15 (Base: indicadores)
+    // Ingresa la URL pública donde alojes el archivo api.php
+    // Ejemplo: "https://midominio.com/api.php"
+    // Si la dejas vacía "", operará en modo simulación local.
+    // =========================================================================
+    const MYSQL_API_URL = "api.php"; 
+
+    const isMySQLActive = MYSQL_API_URL.trim().length > 0;
+    
+    // Declarar appId que se utiliza en el pie de página
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'dashboard-actividades-colaborativo';
+
+    // Clave de Administrador General predeterminada
+    const ADMIN_PASSCODE = "ADMIN123";
+
+    // Listado de Áreas por Defecto Solicitadas
+    const DEFAULT_DEPARTMENTS = [
+      { id: 'contabilidad-y-compras', name: 'CONTABILIDAD Y COMPRAS' },
+      { id: 'recaudo-e-inventarios', name: 'RECAUDO E INVENTARIOS' },
+      { id: 'relaciones-publicas', name: 'RELACIONES PUBLICAS' },
+      { id: 'comunicaciones', name: 'COMUNICACIONES' },
+      { id: 'th-y-sgsst', name: 'TH Y SGSST' },
+      { id: 'tic', name: 'TIC' },
+      { id: 'saa-tecpetrol', name: 'SAA TECPETROL' },
+      { id: 'saa-fec-meta', name: 'SAA FEC META' },
+      { id: 'saa-fec-casanare', name: 'SAA FEC CASANARE' },
+      { id: 'backoffice', name: 'BACKOFFICE' },
+      { id: 'educacion', name: 'EDUCACIÓN' },
+      { id: 'escuela-de-musica', name: 'ESCUELA DE MÚSICA' }
+    ];
+
+    // Colaboradores iniciales adaptados a las nuevas áreas (con contraseñas por defecto)
+    const DEFAULT_COLLABORATORS = [
+      { id: 'admin-default', name: 'Administrador General', department: 'Todos', role: 'admin', password: ADMIN_PASSCODE },
+      { id: 'collab-1', name: 'Carlos Ortega', department: 'TIC', role: 'collaborator', password: '123' },
+      { id: 'collab-2', name: 'Ana Gómez', department: 'RELACIONES PUBLICAS', role: 'collaborator', password: '123' },
+      { id: 'collab-3', name: 'Luis Ramírez', department: 'TH Y SGSST', role: 'collaborator', password: '123' },
+      { id: 'collab-4', name: 'Marta Soler', department: 'CONTABILIDAD Y COMPRAS', role: 'collaborator', password: '123' }
+    ];
+
+    // Actividades de demostración adaptadas a las nuevas áreas
+    const INITIAL_MOCK_ACTIVITIES = [
+      { id: '1', name: 'Optimización de infraestructura de redes internas', department: 'TIC', month: 'Ene', programmed: 5, executed: 5, periodicity: 'Mensual', notes: 'Completado a tiempo', evidence: 'https://github.com', createdBy: 'Carlos Ortega (TIC)', createdAt: Date.now() - 5000000 },
+      { id: '2', name: 'Boletín de prensa institucional de fin de año', department: 'COMUNICACIONES', month: 'Ene', programmed: 10, executed: 8, periodicity: 'Mensual', notes: 'Faltó material gráfico final', evidence: 'https://google.com', createdBy: 'Ana Gómez (Comunicaciones)', createdAt: Date.now() - 4000000 },
+      { id: '3', name: 'Inspección de seguridad en sitio SAA TECPETROL', department: 'TH Y SGSST', month: 'Ene', programmed: 3, executed: 3, periodicity: 'Semestral', notes: 'Cumplimiento normativo total', evidence: '', createdBy: 'Luis Ramírez (TH Y SGSST)', createdAt: Date.now() - 3000000 },
+      { id: '4', name: 'Inventario general de activos y compras', department: 'RECAUDO E INVENTARIOS', month: 'Feb', programmed: 8, executed: 8, periodicity: 'Trimestral', notes: 'Meta de conciliación superada', evidence: '', createdBy: 'Marta Soler (Recaudo)', createdAt: Date.now() - 2000000 }
+    ];
+
+    const MONTHS_LIST = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const PERIODICITIES = ['Mensual', 'Bimestral', 'Trimestral', 'Semestral'];
+
+    // Componente de Iconos Autónomos en formato SVG (Rápido, libre de CDNs inestables)
+    const Icon = ({ name, className = "w-5 h-5" }) => {
+      const icons = {
+        users: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />,
+        building: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />,
+        logout: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />,
+        filter: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 8.293A1 1 0 013 7.586V4z" />,
+        calendar: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />,
+        search: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />,
+        plus: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />,
+        trash: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />,
+        edit: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />,
+        check: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />,
+        x: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />,
+        shield: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />,
+        clock: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />,
+        trending: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />,
+        external: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />,
+        userCheck: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.18 1.8a9 9 0 11-11.2 0H20" />,
+        alert: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      };
+      return (
+        <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          {icons[name] || null}
+        </svg>
+      );
+    };
+
+    // --- COMPONENTE DE SELECCIÓN MÚLTIPLE PREMIUM PARA LOS FILTROS ---
+    const MultiSelect = ({ options, selected, onChange, placeholder, icon }) => {
+      const [isOpen, setIsOpen] = useState(false);
+
+      const handleToggle = (value) => {
+        if (selected.includes(value)) {
+          onChange(selected.filter(item => item !== value));
+        } else {
+          onChange([...selected, value]);
+        }
+      };
+
+      const handleClearAll = () => {
+        onChange([]); // El arreglo vacío indica "Todos"
+      };
+
+      // Resumen del texto mostrado en el botón del filtro
+      const buttonLabel = useMemo(() => {
+        if (selected.length === 0 || selected.length === options.length) {
+          return placeholder;
+        }
+        if (selected.length > 2) {
+          return `${selected.length} seleccionados`;
+        }
+        return selected.join(', ');
+      }, [selected, options, placeholder]);
+
+      return (
+        <div className="relative w-full">
+          <button
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            className="w-full flex items-center justify-between bg-gray-50 text-gray-900 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <div className="flex items-center gap-1.5 truncate pr-2">
+              {icon}
+              <span className="truncate font-semibold">{buttonLabel}</span>
+            </div>
+            <svg className={`w-3 h-3 text-gray-500 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          
+          {isOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+              <div className="absolute left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-60 overflow-y-auto p-1.5 animate-slide-in-up">
+                <button
+                  type="button"
+                  onClick={() => { handleClearAll(); setIsOpen(false); }}
+                  className={`w-full text-left px-2 py-1.5 rounded-md text-xs font-bold transition flex items-center justify-between mb-1 ${
+                    selected.length === 0 ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <span>✨ Todos / Restablecer</span>
+                  {selected.length === 0 && <Icon name="check" className="w-3.5 h-3.5" />}
+                </button>
+                <div className="border-t border-gray-100 my-1" />
+                {options.map(opt => {
+                  const isChecked = selected.includes(opt);
+                  return (
+                    <label
+                      key={opt}
+                      className={`flex items-center justify-between px-2 py-1.5 rounded-md text-xs cursor-pointer transition select-none ${
+                        isChecked ? 'bg-indigo-50/70 font-semibold text-indigo-900' : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggle(opt)}
+                          className="w-3.5 h-3.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
+                        />
+                        <span>{opt}</span>
+                      </div>
+                      {isChecked && <Icon name="check" className="w-3.5 h-3.5 text-indigo-600" />}
+                    </label>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      );
+    };
+
+    function App() {
+      // --- ESTADOS ---
+      const [activities, setActivities] = useState([]);
+      const [departments, setDepartments] = useState([]);
+      const [collaborators, setCollaborators] = useState([]);
+      const [isLoading, setIsLoading] = useState(true);
+      const [syncError, setSyncError] = useState(null);
+
+      // Perfil activo de firma
+      const [currentUserProfile, setCurrentUserProfile] = useState(() => {
+        const saved = localStorage.getItem('current_user_profile');
+        return saved ? JSON.parse(saved) : null;
+      });
+
+      // Modales de control
+      const [showIdentityModal, setShowIdentityModal] = useState(!localStorage.getItem('current_user_profile'));
+      const [showDeptModal, setShowDeptModal] = useState(false);
+      const [showUsersModal, setShowUsersModal] = useState(false);
+      const [showBackupModal, setShowBackupModal] = useState(false);
+      
+      const [newDeptInput, setNewDeptInput] = useState('');
+      const [newCollabName, setNewCollabName] = useState('');
+      const [newCollabDept, setNewCollabDept] = useState('');
+      const [newCollabRole, setNewCollabRole] = useState('collaborator');
+      const [newCollabPass, setNewCollabPass] = useState('');
+
+      // Estados para edición inline de colaboradores (Usuarios)
+      const [editingUserId, setEditingUserId] = useState(null);
+      const [editCollabName, setEditCollabName] = useState('');
+      const [editCollabDept, setEditCollabDept] = useState('');
+      const [editCollabRole, setEditCollabRole] = useState('collaborator');
+      const [editCollabPass, setEditCollabPass] = useState('');
+
+      // Modal de confirmación para restauración de copia de seguridad (JSON)
+      const [showImportConfirmModal, setShowImportConfirmModal] = useState(false);
+      const [pendingImportData, setPendingImportData] = useState(null);
+
+      const [loginPasscodeInput, setLoginPasscodeInput] = useState('');
+      const [passcodeError, setPasscodeError] = useState('');
+      const [selectedProfileForLogin, setSelectedProfileForLogin] = useState(null);
+
+      // --- ESTADOS DE MULTISELECCIÓN PARA FILTROS (Arreglos vacíos significan "Todos") ---
+      const [selectedMonths, setSelectedMonths] = useState([]);
+      const [selectedDepts, setSelectedDepts] = useState([]);
+      const [selectedPeriodicities, setSelectedPeriodicities] = useState([]);
+      
+      const [activeFilterCard, setActiveFilterCard] = useState('Todas');
+      const [searchQuery, setSearchQuery] = useState('');
+
+      const [showAddForm, setShowAddForm] = useState(false);
+      const [editingId, setEditingId] = useState(null);
+      const [activeTabCharts, setActiveTabCharts] = useState('estados');
+      const [toastMsg, setToastMsg] = useState(null);
+
+      // Control de la vista de la línea de tiempo ('metas' para Plan/Logro, 'volumen' para Cant. de actividades)
+      const [timelineView, setTimelineView] = useState('metas');
+
+      // Estado para los meses seleccionados mediante checkboxes en el formulario
+      const [formMonths, setFormMonths] = useState(['Ene']);
+
+      const [newActivity, setNewActivity] = useState({
+        name: '',
+        department: '',
+        month: 'Ene',
+        programmed: 1,
+        executed: 0,
+        periodicity: 'Mensual',
+        notes: '',
+        evidence: ''
+      });
+
+      const triggerToast = (msg) => {
+        setToastMsg(msg);
+        setTimeout(() => setToastMsg(null), 4000);
+      };
+
+      // =========================================================================
+      // HELPER DE API REST (Conecta con MySQL vía PHP)
+      // =========================================================================
+      const apiHelper = {
+        get: async (table) => {
+          if (!isMySQLActive) return null;
+          try {
+            const res = await fetch(`${MYSQL_API_URL}?action=get&table=${table}`);
+            return await res.json();
+          } catch (e) {
+            console.error(`Error GET ${table}:`, e);
+            return null;
+          }
+        },
+        post: async (table, data) => {
+          if (!isMySQLActive) return null;
+          try {
+            const res = await fetch(`${MYSQL_API_URL}?action=post&table=${table}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(data)
+            });
+            return await res.json();
+          } catch (e) {
+            console.error(`Error POST ${table}:`, e);
+            return null;
+          }
+        },
+        put: async (table, id, data) => {
+          if (!isMySQLActive) return null;
+          try {
+            const res = await fetch(`${MYSQL_API_URL}?action=put&table=${table}&id=${id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(data)
+            });
+            return await res.json();
+          } catch (e) {
+            console.error(`Error PUT ${table}:`, e);
+            return null;
+          }
+        },
+        delete: async (table, id) => {
+          if (!isMySQLActive) return null;
+          try {
+            const res = await fetch(`${MYSQL_API_URL}?action=delete&table=${table}&id=${id}`, {
+              method: 'DELETE'
+            });
+            return await res.json();
+          } catch (e) {
+            console.error(`Error DELETE ${table}:`, e);
+            return null;
+          }
+        }
+      };
+
+
+      // --- EFECTO INICIAL: OBTENER DATOS (SUSTITUYE A FIREBASE ONSNAPSHOT) ---
+      useEffect(() => {
+        const fetchInitialData = async () => {
+          if (isMySQLActive) {
+            // Flujo API MySQL
+            try {
+              const [acts, depts, collabs] = await Promise.all([
+                apiHelper.get('activities'),
+                apiHelper.get('departments'),
+                apiHelper.get('collaborators')
+              ]);
+
+              if (acts) {
+                acts.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                setActivities(acts);
+              }
+              if (depts) {
+                depts.sort((a, b) => a.name.localeCompare(b.name));
+                setDepartments(depts);
+              }
+              if (collabs) {
+                collabs.sort((a, b) => a.name.localeCompare(b.name));
+                setCollaborators(collabs);
+              }
+            } catch (err) {
+              setSyncError("Acceso limitado al servidor MySQL.");
+            }
+          } else {
+            // Flujo Local de datos desde localStorage (Fallback)
+            const localActs = localStorage.getItem('local_activities');
+            const localDepts = localStorage.getItem('local_departments');
+            const localCollabs = localStorage.getItem('local_collaborators');
+            
+            if (localActs) {
+              setActivities(JSON.parse(localActs));
+            } else {
+              setActivities(INITIAL_MOCK_ACTIVITIES);
+              localStorage.setItem('local_activities', JSON.stringify(INITIAL_MOCK_ACTIVITIES));
+            }
+
+            if (localDepts) {
+              setDepartments(JSON.parse(localDepts));
+            } else {
+              setDepartments(DEFAULT_DEPARTMENTS);
+              localStorage.setItem('local_departments', JSON.stringify(DEFAULT_DEPARTMENTS));
+            }
+
+            if (localCollabs) {
+              setCollaborators(JSON.parse(localCollabs));
+            } else {
+              setCollaborators(DEFAULT_COLLABORATORS);
+              localStorage.setItem('local_collaborators', JSON.stringify(DEFAULT_COLLABORATORS));
+            }
+          }
+          setIsLoading(false);
+        };
+
+        fetchInitialData();
+        // Nota: A diferencia de Firebase que usa WebSockets (onSnapshot), 
+        // aquí cargamos los datos una vez. Podrías poner un setInterval si necesitas tiempo real estricto.
+      }, []);
+
+
+      // Auto-selección inicial de área responsiva
+      useEffect(() => {
+        if (departments.length > 0) {
+          const allowedDept = currentUserProfile?.role === 'admin' 
+            ? departments[0].name 
+            : (currentUserProfile?.department || departments[0].name);
+
+          setNewActivity(prev => ({ 
+            ...prev, 
+            department: allowedDept 
+          }));
+          setNewCollabDept(departments[0].name);
+        }
+      }, [departments, currentUserProfile]);
+
+
+      // --- GESTIÓN DE ÁREAS (ADMINISTRATIVO) ---
+      const handleAddDepartment = async (e) => {
+        e.preventDefault();
+        if (currentUserProfile?.role !== 'admin') return;
+
+        const cleanName = newDeptInput.trim();
+        if (!cleanName) return;
+
+        if (departments.some(d => d.name.toLowerCase() === cleanName.toLowerCase())) {
+          triggerToast("⚠️ Este departamento ya existe.");
+          return;
+        }
+
+        const deptId = cleanName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        const newDept = { id: deptId, name: cleanName };
+
+        if (isMySQLActive) {
+          const response = await apiHelper.post('departments', newDept);
+          if (response && response.success) {
+            setDepartments([...departments, newDept]);
+            triggerToast(`🏢 Área "${cleanName}" agregada en MySQL.`);
+          } else {
+            triggerToast("❌ Error al guardar en MySQL.");
+          }
+        } else {
+          const updated = [...departments, newDept];
+          setDepartments(updated);
+          localStorage.setItem('local_departments', JSON.stringify(updated));
+          triggerToast(`🏢 Área "${cleanName}" agregada localmente.`);
+        }
+        setNewDeptInput('');
+      };
+
+      const handleDeleteDepartment = async (id, name) => {
+        if (currentUserProfile?.role !== 'admin') return;
+
+        if (isMySQLActive) {
+          const response = await apiHelper.delete('departments', id);
+          if(response && response.success) {
+            setDepartments(departments.filter(d => d.id !== id));
+            triggerToast(`🗑️ Área "${name}" eliminada de MySQL.`);
+          } else {
+            triggerToast("❌ Error al eliminar de MySQL.");
+          }
+        } else {
+          const updated = departments.filter(d => d.id !== id);
+          setDepartments(updated);
+          localStorage.setItem('local_departments', JSON.stringify(updated));
+          triggerToast(`🗑️ Área "${name}" eliminada localmente.`);
+        }
+      };
+
+
+      // --- GESTIÓN DE COLABORADORES (CREAR, ELIMINAR, EDITAR) ---
+      const handleAddCollaborator = async (e) => {
+        e.preventDefault();
+        if (currentUserProfile?.role !== 'admin') return;
+
+        const cleanName = newCollabName.trim();
+        const cleanPass = newCollabPass.trim();
+        
+        if (!cleanName) return;
+        if (!cleanPass) {
+          triggerToast("⚠️ Debes asignar una contraseña al usuario.");
+          return;
+        }
+
+        const collabId = 'collab-' + Date.now().toString();
+        const newCollab = {
+          id: collabId,
+          name: cleanName,
+          department: newCollabRole === 'admin' ? 'Todos' : newCollabDept,
+          role: newCollabRole,
+          password: cleanPass
+        };
+
+        if (isMySQLActive) {
+          const response = await apiHelper.post('collaborators', newCollab);
+          if(response && response.success) {
+            setCollaborators([...collaborators, newCollab]);
+            triggerToast(`👤 Colaborador "${cleanName}" registrado en MySQL.`);
+          } else {
+            triggerToast("❌ Error al guardar colaborador en MySQL.");
+          }
+        } else {
+          const updated = [...collaborators, newCollab];
+          setCollaborators(updated);
+          localStorage.setItem('local_collaborators', JSON.stringify(updated));
+          triggerToast(`👤 Colaborador "${cleanName}" registrado localmente.`);
+        }
+        setNewCollabName('');
+        setNewCollabPass('');
+      };
+
+      const handleDeleteCollaborator = async (id, name) => {
+        if (currentUserProfile?.role !== 'admin') return;
+        if (id === 'admin-default') {
+          triggerToast("⚠️ No es posible eliminar el administrador por defecto.");
+          return;
+        }
+
+        if (isMySQLActive) {
+          const response = await apiHelper.delete('collaborators', id);
+          if(response && response.success) {
+            setCollaborators(collaborators.filter(c => c.id !== id));
+            triggerToast(`🗑️ Colaborador "${name}" eliminado de MySQL.`);
+          } else {
+            triggerToast("❌ Error al remover colaborador.");
+          }
+        } else {
+          const updated = collaborators.filter(c => c.id !== id);
+          setCollaborators(updated);
+          localStorage.setItem('local_collaborators', JSON.stringify(updated));
+          triggerToast(`🗑️ Colaborador "${name}" removido.`);
+        }
+      };
+
+      const handleSaveEditCollaborator = async (id) => {
+        const cleanName = editCollabName.trim();
+        const cleanPass = editCollabPass.trim();
+        
+        if (!cleanName) return;
+        
+        const existingUser = collaborators.find(c => c.id === id);
+        const finalPass = cleanPass || existingUser.password || '123';
+
+        const updatedCollab = {
+          id,
+          name: cleanName,
+          department: editCollabRole === 'admin' ? 'Todos' : editCollabDept,
+          role: editCollabRole,
+          password: finalPass
+        };
+
+        if (isMySQLActive) {
+          const response = await apiHelper.put('collaborators', id, updatedCollab);
+          if(response && response.success) {
+            setCollaborators(collaborators.map(c => c.id === id ? updatedCollab : c));
+            triggerToast(`👤 Colaborador "${cleanName}" actualizado en MySQL.`);
+          } else {
+            triggerToast("❌ Error al actualizar colaborador.");
+          }
+        } else {
+          const updated = collaborators.map(c => c.id === id ? updatedCollab : c);
+          setCollaborators(updated);
+          localStorage.setItem('local_collaborators', JSON.stringify(updated));
+          triggerToast(`👤 Colaborador "${cleanName}" actualizado localmente.`);
+          
+          if (currentUserProfile && currentUserProfile.id === id) {
+            setCurrentUserProfile(updatedCollab);
+            localStorage.setItem('current_user_profile', JSON.stringify(updatedCollab));
+          }
+        }
+        setEditingUserId(null);
+      };
+
+
+      // --- RESPALDO: EXPORTACIÓN E IMPORTACIÓN EN COPIA DE SEGURIDAD ---
+      const handleExportBackup = () => {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(
+          JSON.stringify({
+            activities,
+            departments,
+            collaborators
+          }, null, 2)
+        );
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `respaldo-actividades-${new Date().toISOString().slice(0,10)}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+        triggerToast("💾 Copia de seguridad descargada con éxito.");
+      };
+
+      const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const parsedData = JSON.parse(event.target.result);
+            if (!parsedData.activities || !parsedData.departments || !parsedData.collaborators) {
+              triggerToast("❌ Formato de copia de seguridad inválido.");
+              return;
+            }
+            setPendingImportData(parsedData);
+            setShowImportConfirmModal(true);
+            setShowBackupModal(false); 
+          } catch (err) {
+            console.error(err);
+            triggerToast("❌ Error al procesar el archivo JSON.");
+          }
+        };
+        reader.readAsText(file);
+      };
+
+      const executeImport = async () => {
+        if (!pendingImportData) return;
+
+        try {
+          const { activities: backupActs, departments: backupDepts, collaborators: backupCollabs } = pendingImportData;
+
+          if (isMySQLActive) {
+            // Nota: En un entorno de producción de MySQL real con un backend propio, 
+            // esto debería hacerse mediante un único "bulk insert" (o endpoint masivo) 
+            // para no saturar el servidor con docenas de peticiones HTTP en bucle.
+            triggerToast("⚠️ Nota: Importación masiva hacia MySQL requiere un endpoint específico en el PHP.");
+          } else {
+            setActivities(backupActs);
+            setDepartments(backupDepts);
+            setCollaborators(backupCollabs);
+
+            localStorage.setItem('local_activities', JSON.stringify(backupActs));
+            localStorage.setItem('local_departments', JSON.stringify(backupDepts));
+            localStorage.setItem('local_collaborators', JSON.stringify(backupCollabs));
+            triggerToast("🎉 Datos locales restaurados con éxito.");
+          }
+        } catch (error) {
+          console.error("Error importando datos:", error);
+          triggerToast("❌ Error al importar los datos.");
+        } finally {
+          setShowImportConfirmModal(false);
+          setPendingImportData(null);
+        }
+      };
+
+
+      // --- GESTIÓN DE SESIONES ---
+      const handleSelectProfile = (profile) => {
+        setSelectedProfileForLogin(profile);
+        setLoginPasscodeInput('');
+        setPasscodeError('');
+      };
+
+      const handleLoginSubmit = (e) => {
+        if(e) e.preventDefault();
+        
+        if (!selectedProfileForLogin) return;
+
+        const expectedPass = selectedProfileForLogin.id === 'admin-default' 
+          ? (selectedProfileForLogin.password || ADMIN_PASSCODE) 
+          : (selectedProfileForLogin.password || '123');
+
+        if (loginPasscodeInput === expectedPass) {
+          setCurrentUserProfile(selectedProfileForLogin);
+          localStorage.setItem('current_user_profile', JSON.stringify(selectedProfileForLogin));
+          setShowIdentityModal(false);
+          setLoginPasscodeInput('');
+          setPasscodeError('');
+          setSelectedProfileForLogin(null);
+          
+          if(selectedProfileForLogin.role === 'admin') {
+             triggerToast(`👑 Sesión Administrador: ${selectedProfileForLogin.name}`);
+          } else {
+             triggerToast(`👤 Colaborador: ${selectedProfileForLogin.name} (${selectedProfileForLogin.department})`);
+          }
+        } else {
+          setPasscodeError("Contraseña incorrecta.");
+        }
+      };
+
+      const handleLogout = () => {
+        localStorage.removeItem('current_user_profile');
+        setCurrentUserProfile(null);
+        setShowIdentityModal(true);
+      };
+
+
+      // --- OPERACIONES SOBRE ACTIVIDADES ---
+      const handleAddActivity = async (e) => {
+        e.preventDefault();
+        if (!newActivity.name.trim()) return;
+
+        if (formMonths.length === 0) {
+          triggerToast("⚠️ Debes seleccionar al menos un mes programado.");
+          return;
+        }
+
+        const assignedDept = currentUserProfile?.role === 'admin' 
+          ? newActivity.department 
+          : (currentUserProfile?.department || 'TI');
+
+        const executedValue = currentUserProfile?.role === 'admin' ? Number(newActivity.executed) : 0;
+
+        try {
+          const promises = formMonths.map(async (m, index) => {
+            const freshActivity = {
+              id: Date.now().toString() + index, // El backend MySQL debe aceptar este ID o auto-generarlo
+              name: newActivity.name,
+              department: assignedDept,
+              month: m,
+              programmed: Number(newActivity.programmed) || 1,
+              executed: executedValue,
+              periodicity: newActivity.periodicity,
+              notes: newActivity.notes,
+              evidence: newActivity.evidence.trim(),
+              createdBy: `${currentUserProfile?.name} (${currentUserProfile?.department})`,
+              createdAt: Date.now() + index 
+            };
+
+            if (isMySQLActive) {
+              await apiHelper.post('activities', freshActivity);
+              return { mysql: true, data: freshActivity };
+            } else {
+              return { local: true, data: freshActivity };
+            }
+          });
+
+          const results = await Promise.all(promises);
+
+          // Actualización de UI post guardado
+          const newActsData = results.map(res => res.data);
+          const updatedList = [...newActsData, ...activities];
+          setActivities(updatedList);
+          
+          if (!isMySQLActive) {
+            localStorage.setItem('local_activities', JSON.stringify(updatedList));
+            triggerToast(`💾 ${formMonths.length} actividades guardadas localmente.`);
+          } else {
+            triggerToast(`🎉 ${formMonths.length} actividades registradas en MySQL.`);
+          }
+
+        } catch (err) {
+          console.error("Error al guardar actividades:", err);
+          triggerToast("❌ Error al guardar actividades.");
+        }
+
+        setNewActivity({
+          name: '',
+          department: departments[0]?.name || '',
+          month: 'Ene',
+          programmed: 1,
+          executed: 0,
+          periodicity: 'Mensual',
+          notes: '',
+          evidence: ''
+        });
+        setFormMonths(['Ene']); 
+        setShowAddForm(false);
+      };
+
+      const handleDeleteActivity = async (id, actDept) => {
+        if (currentUserProfile?.role !== 'admin' && currentUserProfile?.department !== actDept) {
+          triggerToast(`⚠️ No tienes permisos para borrar actividades de ${actDept}.`);
+          return;
+        }
+
+        if (isMySQLActive) {
+          const response = await apiHelper.delete('activities', id);
+          if (response && response.success) {
+            setActivities(activities.filter(act => act.id !== id));
+            triggerToast("🗑️ Tarea eliminada de MySQL.");
+          } else {
+            triggerToast("❌ Error al eliminar de MySQL.");
+          }
+        } else {
+          const updated = activities.filter(act => act.id !== id);
+          setActivities(updated);
+          localStorage.setItem('local_activities', JSON.stringify(updated));
+          triggerToast("🗑️ Tarea eliminada localmente.");
+        }
+      };
+
+      const handleQuickProgress = async (id, actDept, change) => {
+        if (currentUserProfile?.role !== 'admin') {
+          triggerToast("⚠️ Solo el Administrador General puede modificar el logro de Ejecución.");
+          return;
+        }
+
+        const act = activities.find(a => a.id === id);
+        if (!act) return;
+
+        const nextExecuted = Math.min(act.programmed, Math.max(0, act.executed + change));
+        const updatedFields = {
+           executed: nextExecuted,
+           modifiedBy: `${currentUserProfile?.name} (Admin)`,
+           modifiedAt: Date.now()
+        };
+
+        if (isMySQLActive) {
+          const response = await apiHelper.put('activities', id, updatedFields);
+          if (response && response.success) {
+             setActivities(activities.map(a => a.id === id ? { ...a, ...updatedFields } : a));
+          } else {
+            triggerToast("❌ Error al actualizar ejecución en MySQL.");
+          }
+        } else {
+          const updated = activities.map(a => a.id === id ? { ...a, ...updatedFields } : a);
+          setActivities(updated);
+          localStorage.setItem('local_activities', JSON.stringify(updated));
+        }
+      };
+
+      const saveEdit = async (id, updatedFields, originalActDept) => {
+        if (currentUserProfile?.role !== 'admin' && currentUserProfile?.department !== originalActDept) {
+          triggerToast(`⚠️ No tienes permisos para editar actividades de ${originalActDept}.`);
+          return;
+        }
+
+        const original = activities.find(a => a.id === id);
+        if (!original) return;
+
+        const prog = Number(updatedFields.programmed) ?? original.programmed;
+        let exec = original.executed;
+        
+        if (currentUserProfile?.role === 'admin') {
+          exec = Math.min(prog, Number(updatedFields.executed) ?? original.executed);
+        }
+
+        const merged = {
+          ...updatedFields,
+          programmed: prog,
+          executed: exec,
+          modifiedBy: `${currentUserProfile?.name} (${currentUserProfile?.department})`,
+          modifiedAt: Date.now()
+        };
+
+        if (isMySQLActive) {
+          const response = await apiHelper.put('activities', id, merged);
+          if (response && response.success) {
+            setActivities(activities.map(a => (a.id === id ? { ...a, ...merged } : a)));
+            triggerToast("✏️ Cambios guardados en MySQL.");
+          } else {
+            triggerToast("❌ Error al guardar en MySQL.");
+          }
+        } else {
+          const updated = activities.map(a => (a.id === id ? { ...a, ...merged } : a));
+          setActivities(updated);
+          localStorage.setItem('local_activities', JSON.stringify(updated));
+          triggerToast("✏️ Cambios guardados localmente.");
+        }
+        setEditingId(null);
+      };
+
+
+      // --- CÁLCULO Y FILTRADO CON SOPORTE MULTI-SELECCIÓN ---
+      const currentFilteredActivities = useMemo(() => {
+        return activities.filter(act => {
+          const matchMonth = selectedMonths.length === 0 || selectedMonths.includes(act.month);
+          const matchDept = selectedDepts.length === 0 || selectedDepts.includes(act.department);
+          const matchPeriod = selectedPeriodicities.length === 0 || selectedPeriodicities.includes(act.periodicity);
+          const matchSearch = searchQuery === '' || 
+            act.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (act.notes && act.notes.toLowerCase().includes(searchQuery.toLowerCase())) ||
+            (act.evidence && act.evidence.toLowerCase().includes(searchQuery.toLowerCase())) ||
+            (act.createdBy && act.createdBy.toLowerCase().includes(searchQuery.toLowerCase()));
+
+          return matchMonth && matchDept && matchPeriod && matchSearch;
+        });
+      }, [activities, selectedMonths, selectedDepts, selectedPeriodicities, searchQuery]);
+
+      const metrics = useMemo(() => {
+        let totalProgrammed = 0;
+        let totalExecuted = 0;
+        let counts = { complete: 0, partial: 0, pending: 0 };
+        let countPeriodicity = { Mensual: 0, Bimestral: 0, Trimestral: 0, Semestral: 0 };
+
+        currentFilteredActivities.forEach(act => {
+          totalProgrammed += act.programmed;
+          totalExecuted += act.executed;
+
+          if (act.executed === act.programmed && act.programmed > 0) {
+            counts.complete += 1;
+          } else if (act.executed > 0) {
+            counts.partial += 1;
+          } else {
+            counts.pending += 1;
+          }
+
+          if (countPeriodicity[act.periodicity] !== undefined) {
+            countPeriodicity[act.periodicity] += 1;
+          }
+        });
+
+        const completionRate = totalProgrammed > 0 
+          ? Math.round((totalExecuted / totalProgrammed) * 100) 
+          : 0;
+
+        return {
+          totalProgrammed,
+          totalExecuted,
+          completionRate,
+          counts,
+          countPeriodicity,
+          totalActivities: currentFilteredActivities.length
+        };
+      }, [currentFilteredActivities]);
+
+      const displayActivities = useMemo(() => {
+        return currentFilteredActivities.filter(act => {
+          if (activeFilterCard === 'Todas') return true;
+          if (activeFilterCard === 'Completas') return act.executed === act.programmed;
+          if (activeFilterCard === 'Parciales') return act.executed > 0 && act.executed < act.programmed;
+          if (activeFilterCard === 'Pendientes') return act.executed === 0;
+          return true;
+        });
+      }, [currentFilteredActivities, activeFilterCard]);
+
+      const monthlyTimelineData = useMemo(() => {
+        return MONTHS_LIST.map(m => {
+          const monthActs = activities.filter(act => 
+            act.month === m && 
+            (selectedDepts.length === 0 || selectedDepts.includes(act.department)) &&
+            (selectedPeriodicities.length === 0 || selectedPeriodicities.includes(act.periodicity))
+          );
+          const prog = monthActs.reduce((acc, curr) => acc + curr.programmed, 0);
+          const exec = monthActs.reduce((acc, curr) => acc + curr.executed, 0);
+          const pct = prog > 0 ? Math.round((exec / prog) * 100) : 0;
+          return { month: m, programmed: prog, executed: exec, percentage: pct, count: monthActs.length };
+        });
+      }, [activities, selectedDepts, selectedPeriodicities]);
+
+      const departmentData = useMemo(() => {
+        return departments.map(dept => {
+          const deptActs = activities.filter(act => 
+            act.department === dept.name && 
+            (selectedMonths.length === 0 || selectedMonths.includes(act.month)) &&
+            (selectedPeriodicities.length === 0 || selectedPeriodicities.includes(act.periodicity))
+          );
+          const prog = deptActs.reduce((acc, curr) => acc + curr.programmed, 0);
+          const exec = deptActs.reduce((acc, curr) => acc + curr.executed, 0);
+          const pct = prog > 0 ? Math.round((exec / prog) * 100) : 0;
+          return { department: dept.name, programmed: prog, executed: exec, percentage: pct };
+        });
+      }, [activities, departments, selectedMonths, selectedPeriodicities]);
+
+      const maxMonthlyVal = useMemo(() => {
+        const max = Math.max(...monthlyTimelineData.map(d => Math.max(d.programmed, d.executed)));
+        return max > 0 ? max : 10;
+      }, [monthlyTimelineData]);
+
+      const maxMonthlyCount = useMemo(() => {
+        const max = Math.max(...monthlyTimelineData.map(d => d.count || 0));
+        return max > 0 ? max : 5;
+      }, [monthlyTimelineData]);
+
+      const maxDeptVal = useMemo(() => {
+        const max = Math.max(...departmentData.map(d => Math.max(d.programmed, d.executed)));
+        return max > 0 ? max : 10;
+      }, [departmentData]);
+
+      const departmentNames = useMemo(() => {
+        return departments.map(d => d.name);
+      }, [departments]);
+
+
+      return (
+        <div className="min-h-screen bg-gray-100 text-gray-800 font-sans p-4 md:p-6 lg:p-8">
+          
+          {/* TOAST DE MENSAJES */}
+          {toastMsg && (
+            <div className="fixed bottom-5 right-5 z-50 bg-white border border-gray-200 text-gray-800 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-slide-in-up backdrop-blur">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <p className="text-xs md:text-sm font-semibold">{toastMsg}</p>
+            </div>
+          )}
+
+          {/* CUSTOM CONFIRM MODAL FOR BACKUP IMPORT */}
+          {showImportConfirmModal && pendingImportData && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-slide-in-up">
+                <h2 className="text-lg font-bold text-gray-955 flex items-center gap-2 mb-3">
+                  <Icon name="alert" className="w-5 h-5 text-amber-500" />
+                  Confirmar Restauración de Datos
+                </h2>
+                <p className="text-sm text-gray-600 mb-4 leading-relaxed">
+                  ¿Estás seguro de que deseas cargar este respaldo? Esta acción <strong>reemplazará permanentemente</strong> todas tus actividades, colaboradores y departamentos {isMySQLActive ? "en la nube de MySQL" : "locales"} actuales. No se puede deshacer.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowImportConfirmModal(false); setPendingImportData(null); }}
+                    className="px-4 py-2 bg-white hover:bg-gray-50 text-xs font-bold text-gray-600 rounded-xl transition border border-gray-200"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={executeImport}
+                    className="px-4 py-2 bg-indigo-650 hover:bg-indigo-600 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-indigo-600/15"
+                  >
+                    Sí, Restaurar Todo
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL COPIA DE SEGURIDAD */}
+          {showBackupModal && currentUserProfile?.role === 'admin' && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-slide-in-up">
+                <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                  <h2 className="text-lg font-bold text-gray-955 flex items-center gap-2">
+                    <Icon name="external" className="w-5 h-5 text-indigo-600" />
+                    Copia de Seguridad (Backup)
+                  </h2>
+                  <button onClick={() => setShowBackupModal(false)} className="text-gray-400 hover:text-gray-800 font-bold p-1">
+                    <Icon name="x" className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    Extrae una copia de seguridad en formato JSON de todas las actividades e interacciones actuales del dashboard.
+                  </p>
+
+                  <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 flex flex-col gap-2">
+                    <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Guardar copia de seguridad</p>
+                    <button
+                      type="button"
+                      onClick={handleExportBackup}
+                      className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-3 rounded-lg shadow-sm transition-all"
+                    >
+                      <Icon name="check" className="w-4 h-4" />
+                      Descargar Respaldo (.json)
+                    </button>
+                  </div>
+
+                  <div className="bg-gray-550 p-3 rounded-xl border border-gray-200 flex flex-col gap-2">
+                    <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Restaurar desde un archivo</p>
+                    <label className="w-full flex items-center justify-center gap-2 bg-white hover:bg-gray-100 text-gray-700 font-bold text-xs py-2 px-3 rounded-lg border border-gray-200 cursor-pointer shadow-sm transition-all">
+                      <Icon name="external" className="w-4 h-4 text-gray-500" />
+                      <span>Seleccionar Archivo (.json)</span>
+                      <input
+                        type="file"
+                        accept=".json"
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL DE DEPARTAMENTOS */}
+          {showDeptModal && currentUserProfile?.role === 'admin' && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-white border border-gray-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+                <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                  <h2 className="text-lg font-bold text-gray-955 flex items-center gap-2">
+                    <Icon name="building" className="w-5 h-5 text-indigo-600" />
+                    Configurar Áreas / Departamentos
+                  </h2>
+                  <button onClick={() => setShowDeptModal(false)} className="text-gray-400 hover:text-gray-800 font-bold p-1">
+                    <Icon name="x" className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleAddDepartment} className="mb-6 flex gap-2">
+                  <input
+                    required
+                    type="text"
+                    placeholder="Nuevo departamento (Ej: Finanzas)"
+                    value={newDeptInput}
+                    onChange={e => setNewDeptInput(e.target.value)}
+                    className="flex-1 bg-gray-50 text-gray-900 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition">Agregar</button>
+                </form>
+
+                <label className="block text-xs text-gray-500 font-bold uppercase mb-2">Áreas Activas ({departments.length})</label>
+                <div className="max-h-60 overflow-y-auto space-y-2 mb-4 pr-1">
+                  {departments.map((dept) => (
+                    <div key={dept.id} className="flex justify-between items-center bg-gray-50 p-2.5 rounded-xl border border-gray-200">
+                      <span className="text-sm font-semibold text-gray-800">🏢 {dept.name}</span>
+                      <button
+                        onClick={() => handleDeleteDepartment(dept.id, dept.name)}
+                        className="flex items-center gap-1.5 p-1 px-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs transition border border-rose-100"
+                      >
+                        <Icon name="trash" className="w-3.5 h-3.5" />
+                        Quitar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-gray-400 italic">* Nota: Las tareas ya registradas no se verán alteradas pero no podrán usarse en nuevas asignaciones.</p>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL CONFIGURACIÓN DE USUARIOS */}
+          {showUsersModal && currentUserProfile?.role === 'admin' && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-white border border-gray-200 rounded-2xl max-w-2xl w-full p-6 shadow-2xl">
+                <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                  <h2 className="text-lg font-bold text-gray-955 flex items-center gap-2">
+                    <Icon name="users" className="w-5 h-5 text-indigo-600" />
+                    Gestionar Usuarios y Asignación de Áreas
+                  </h2>
+                  <button onClick={() => { setShowUsersModal(false); setEditingUserId(null); }} className="text-gray-400 hover:text-gray-800 font-bold p-1">
+                    <Icon name="x" className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleAddCollaborator} className="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="md:col-span-3">
+                    <p className="text-xs font-bold uppercase text-indigo-600">Crear Nuevo Colaborador</p>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 uppercase font-bold mb-1">Nombre Completo</label>
+                    <input
+                      required
+                      type="text"
+                      placeholder="Ej. Roberto Sánchez"
+                      value={newCollabName}
+                      onChange={e => setNewCollabName(e.target.value)}
+                      className="w-full bg-white text-gray-955 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 uppercase font-bold mb-1">Contraseña</label>
+                    <input
+                      required
+                      type="text"
+                      placeholder="Ej. 12345"
+                      value={newCollabPass}
+                      onChange={e => setNewCollabPass(e.target.value)}
+                      className="w-full bg-white text-gray-955 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 uppercase font-bold mb-1">Rol</label>
+                    <select
+                      value={newCollabRole}
+                      onChange={e => setNewCollabRole(e.target.value)}
+                      className="w-full bg-white text-gray-955 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="collaborator">👤 Colaborador de Área</option>
+                      <option value="admin">👑 Administrador General</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 uppercase font-bold mb-1">Área Permitida para Editar</label>
+                    <select
+                      disabled={newCollabRole === 'admin'}
+                      value={newCollabDept}
+                      onChange={e => setNewCollabDept(e.target.value)}
+                      className="w-full bg-white disabled:opacity-55 text-gray-955 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      {departments.map(dept => (
+                        <option key={dept.id} value={dept.name}>{dept.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="md:col-span-3 flex justify-end pt-2 border-t border-gray-200">
+                    <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-1.5 rounded-lg transition">
+                      Crear Usuario
+                    </button>
+                  </div>
+                </form>
+
+                <label className="block text-xs text-gray-500 font-bold uppercase mb-2">Colaboradores con Acceso ({collaborators.length})</label>
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                  {collaborators.map((c) => {
+                    const isEditingUser = editingUserId === c.id;
+
+                    return (
+                      <div key={c.id} className="flex justify-between items-center bg-gray-50 p-2.5 rounded-xl border border-gray-200">
+                        {isEditingUser ? (
+                          <div className="w-full flex flex-col gap-2 p-1">
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={editCollabName}
+                                onChange={e => setEditCollabName(e.target.value)}
+                                className="flex-1 bg-white border border-gray-200 rounded px-2.5 py-1 text-xs text-gray-955 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                placeholder="Nombre completo"
+                              />
+                              <input
+                                type="text"
+                                value={editCollabPass}
+                                onChange={e => setEditCollabPass(e.target.value)}
+                                className="flex-1 bg-white border border-gray-200 rounded px-2.5 py-1 text-xs text-gray-955 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                placeholder="Contraseña"
+                              />
+                              <select
+                                disabled={c.id === 'admin-default'}
+                                value={editCollabRole}
+                                onChange={e => {
+                                  setEditCollabRole(e.target.value);
+                                  if (e.target.value === 'admin') {
+                                    setEditCollabDept('Todos');
+                                  } else {
+                                    setEditCollabDept(departments[0]?.name || '');
+                                  }
+                                }}
+                                className="bg-white border border-gray-200 rounded px-2 py-1 text-xs text-gray-955 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              >
+                                <option value="collaborator">👤 Colaborador</option>
+                                <option value="admin">👑 Administrador</option>
+                              </select>
+                            </div>
+                            <div className="flex justify-between items-center gap-2">
+                              <select
+                                disabled={editCollabRole === 'admin'}
+                                value={editCollabRole === 'admin' ? 'Todos' : editCollabDept}
+                                onChange={e => setEditCollabDept(e.target.value)}
+                                className="flex-1 bg-white disabled:opacity-50 border border-gray-200 rounded px-2 py-1 text-xs text-gray-955 cursor-pointer focus:outline-none"
+                              >
+                                {editCollabRole === 'admin' ? (
+                                  <option value="Todos">Todos</option>
+                                ) : (
+                                  departments.map(dept => (
+                                    <option key={dept.id} value={dept.name}>{dept.name}</option>
+                                  ))
+                                )}
+                              </select>
+                              <div className="flex gap-1 flex-shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingUserId(null)}
+                                  className="p-1 bg-gray-200 hover:bg-gray-355 text-gray-600 rounded transition"
+                                >
+                                  <Icon name="x" className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEditCollaborator(c.id)}
+                                  className="p-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded border border-emerald-100 transition"
+                                >
+                                  <Icon name="check" className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="w-full flex justify-between items-center">
+                            <div className="text-left">
+                              <p className="text-sm font-semibold text-gray-955">{c.name}</p>
+                              <p className="text-[10px] text-gray-500 uppercase font-bold">
+                                Rol: <span className="text-indigo-600">{c.role === 'admin' ? 'Administrador' : 'Colaborador'}</span> 
+                                {c.role !== 'admin' && ` | Área: ${c.department}`}
+                              </p>
+                            </div>
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingUserId(c.id);
+                                  setEditCollabName(c.name);
+                                  setEditCollabRole(c.role);
+                                  setEditCollabDept(c.department);
+                                  setEditCollabPass(c.password || '');
+                                }}
+                                className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded border border-indigo-100 transition"
+                                title="Editar Usuario"
+                              >
+                                <Icon name="edit" className="w-3.5 h-3.5" />
+                              </button>
+                              {c.id !== 'admin-default' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCollaborator(c.id, c.name)}
+                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded border border-rose-100 transition"
+                                  title="Remover Acceso"
+                                >
+                                  <Icon name="trash" className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL DE IDENTIDAD DE COLABORADOR (INICIO SESIÓN) */}
+          {showIdentityModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-slide-in-up">
+                <h2 className="text-xl font-bold text-gray-955 mb-2 flex items-center gap-2 justify-center">
+                  <Icon name="shield" className="w-5 h-5 text-indigo-600" />
+                  Panel de Identificación Compartido
+                </h2>
+                <p className="text-xs text-gray-500 mb-6 text-center leading-relaxed">
+                  Para registrar avances, subir evidencias o auditar actividades, selecciona tu perfil autorizado por Administración.
+                </p>
+
+                <div className="space-y-4">
+                  <label className="block text-xs text-gray-500 font-bold uppercase tracking-wider mb-2">Usuarios Autorizados Registrados</label>
+                  
+                  <div className="max-h-52 overflow-y-auto space-y-2 mb-4 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                    {collaborators.map((c) => {
+                      const isSelected = selectedProfileForLogin?.id === c.id;
+                      
+                      return (
+                        <div
+                          key={c.id}
+                          onClick={() => {
+                             if (!isSelected) {
+                               handleSelectProfile(c);
+                             }
+                          }}
+                          className={`w-full text-left p-2.5 rounded-lg border transition flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                            isSelected 
+                              ? 'border-indigo-300 bg-indigo-50 shadow-sm' 
+                              : 'border-gray-200 bg-white hover:bg-gray-50 cursor-pointer'
+                          }`}
+                        >
+                          <div>
+                            <p className="text-xs font-bold text-gray-955">{c.name}</p>
+                            <p className="text-[10px] text-gray-500">
+                              {c.role === 'admin' ? '👑 Administrador General' : `🏢 Área: ${c.department}`}
+                            </p>
+                          </div>
+                          
+                          {isSelected && (
+                            <form onSubmit={handleLoginSubmit} className="flex items-center gap-1.5 w-full sm:w-auto mt-2 sm:mt-0" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="password"
+                                placeholder="Ingresa tu contraseña"
+                                autoFocus
+                                value={loginPasscodeInput}
+                                onChange={(e) => setLoginPasscodeInput(e.target.value)}
+                                className="bg-white text-gray-900 placeholder-gray-400 border border-gray-300 rounded px-2.5 py-1.5 text-xs w-full sm:w-32 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                              />
+                              <button
+                                type="submit"
+                                className="bg-indigo-600 text-white text-xs font-bold px-3 py-1.5 rounded hover:bg-indigo-500 transition-colors whitespace-nowrap"
+                              >
+                                Entrar
+                              </button>
+                            </form>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {passcodeError && (
+                    <p className="text-[10px] text-rose-600 font-bold bg-rose-50 p-2 rounded text-center border border-rose-100 animate-pulse">{passcodeError}</p>
+                  )}
+                  
+                  {selectedProfileForLogin && !passcodeError && (
+                     <p className="text-[10px] text-gray-400 text-center italic">Ingresa la contraseña para continuar como {selectedProfileForLogin.name}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* HEADER */}
+          <header className="flex flex-col xl:flex-row xl:items-center xl:justify-between pb-6 mb-6 border-b border-gray-250 gap-6">
+            <div>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <span className="p-2.5 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-500/10 self-start">
+                  <Icon name="trending" className="w-8 h-8" />
+                </span>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-gray-955">
+                      Dashboard Colaborativo de Actividades
+                    </h1>
+                    <span className={`text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full ${
+                      isMySQLActive 
+                        ? 'bg-blue-100 text-blue-800 border border-blue-200' 
+                        : 'bg-amber-100 text-amber-800 border border-amber-200'
+                    }`}>
+                      {isMySQLActive ? '🔵 Conectado a MySQL' : '💾 Simulación Local'}
+                    </span>
+                  </div>
+                  <p className="text-gray-555 text-xs md:text-sm mt-0.5">
+                    Control de metas interdepartamentales con bloqueo y asignación de privilegios de ejecución.
+                  </p>
+
+                  {!isMySQLActive && (
+                    <div className="mt-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-[11px] flex items-start gap-2 max-w-2xl shadow-sm">
+                      <Icon name="alert" className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <span className="font-bold">Aviso:</span> El dashboard está funcionando de forma local. Para conectar a la base de datos MySQL (173.201.182.15), debes configurar la variable <code>MYSQL_API_URL</code> apuntando a tu script de PHP.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* CONTROLES ADMINISTRATIVOS */}
+            <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-2xl border border-gray-200 shadow-sm">
+              <div className="text-left pr-3 border-r border-gray-200">
+                <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Colaborador Activo</p>
+                <p className="text-xs font-semibold text-gray-900 flex items-center gap-1.5 mt-0.5">
+                  <Icon name="userCheck" className="w-4 h-4 text-indigo-600" />
+                  {currentUserProfile?.name} 
+                  <span className="text-indigo-600 font-bold">
+                    ({currentUserProfile?.role === 'admin' ? 'Administrador' : currentUserProfile?.department})
+                  </span>
+                </p>
+              </div>
+              <div className="flex gap-2">
+                {currentUserProfile?.role === 'admin' && (
+                  <>
+                    <button
+                      onClick={() => setShowUsersModal(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-xs text-indigo-700 font-bold rounded-lg border border-indigo-100 transition-all"
+                    >
+                      <Icon name="users" className="w-3.5 h-3.5" />
+                      Usuarios
+                    </button>
+                    <button
+                      onClick={() => setShowDeptModal(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-xs text-indigo-700 font-bold rounded-lg border border-indigo-100 transition-all"
+                    >
+                      <Icon name="building" className="w-3.5 h-3.5" />
+                      Áreas
+                    </button>
+                    <button
+                      onClick={() => setShowBackupModal(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-xs text-indigo-700 font-bold rounded-lg border border-indigo-100 transition-all"
+                    >
+                      <Icon name="external" className="w-3.5 h-3.5" />
+                      Copia de Seguridad
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-xs text-rose-600 font-bold rounded-lg border border-rose-100 transition-all"
+                >
+                  <Icon name="logout" className="w-3.5 h-3.5" />
+                  Salir
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* BARRA DE FILTROS ACTUALIZADA A MULTISELECCIÓN */}
+          <section className="bg-white border border-gray-200 rounded-2xl p-4 mb-6 shadow-sm">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Icon name="filter" className="w-5 h-5 text-gray-500" />
+                <span className="text-sm font-bold text-gray-700">Filtros de Análisis</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3 w-full">
+                {/* Filtro Multiselección de Áreas */}
+                <div>
+                  <MultiSelect
+                    options={departmentNames}
+                    selected={selectedDepts}
+                    onChange={(val) => { setSelectedDepts(val); setActiveFilterCard('Todas'); }}
+                    placeholder="🏢 Todos los Deptos"
+                    icon={<Icon name="building" className="w-4 h-4 text-gray-400" />}
+                  />
+                </div>
+
+                {/* Filtro Multiselección de Meses */}
+                <div>
+                  <MultiSelect
+                    options={MONTHS_LIST}
+                    selected={selectedMonths}
+                    onChange={(val) => { setSelectedMonths(val); setActiveFilterCard('Todas'); }}
+                    placeholder="📅 Todo el Año"
+                    icon={<Icon name="calendar" className="w-4 h-4 text-gray-400" />}
+                  />
+                </div>
+
+                {/* Filtro Multiselección de Periodicidades */}
+                <div>
+                  <MultiSelect
+                    options={PERIODICITIES}
+                    selected={selectedPeriodicities}
+                    onChange={(val) => { setSelectedPeriodicities(val); setActiveFilterCard('Todas'); }}
+                    placeholder="🔄 Todas las Periodicidades"
+                    icon={<Icon name="filter" className="w-4 h-4 text-gray-400" />}
+                  />
+                </div>
+
+                {/* Buscador de Actividades */}
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-gray-400">
+                    <Icon name="search" className="w-3.5 h-3.5" />
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Buscar por nombre/creador..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-gray-50 text-gray-900 pl-8 pr-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                {/* Botón Inteligente para Limpiar Filtros */}
+                {(selectedDepts.length > 0 || selectedMonths.length > 0 || selectedPeriodicities.length > 0 || searchQuery !== '' || activeFilterCard !== 'Todas') && (
+                  <button
+                    onClick={() => {
+                      setSelectedDepts([]);
+                      setSelectedMonths([]);
+                      setSelectedPeriodicities([]);
+                      setSearchQuery('');
+                      setActiveFilterCard('Todas');
+                    }}
+                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-800 px-3 py-1.5 text-xs font-bold rounded-lg border border-indigo-100 transition-all text-center"
+                  >
+                    Borrar Filtros
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* METRICAS / BOTONES KPI */}
+          <section className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+            {/* KPI: Programadas */}
+            <button
+              onClick={() => setActiveFilterCard('Todas')}
+              className={`flex flex-col justify-between p-4 rounded-2xl border transition-all text-left relative overflow-hidden ${
+                activeFilterCard === 'Todas'
+                  ? 'bg-white border-indigo-500 shadow-xl shadow-indigo-100 scale-[1.02]'
+                  : 'bg-white border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex justify-between items-start w-full">
+                <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Actividades Programadas</span>
+                <span className="p-1.5 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <Icon name="calendar" className="w-5 h-5" />
+                </span>
+              </div>
+              <div className="mt-4">
+                <p className="text-3xl font-extrabold text-gray-955">{metrics.totalProgrammed}</p>
+                <p className="text-[10px] text-gray-500 mt-1">Metas en {metrics.totalActivities} metas</p>
+              </div>
+              {activeFilterCard === 'Todas' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-500"></div>}
+            </button>
+
+            {/* KPI: Ejecutadas */}
+            <div className="flex flex-col justify-between p-4 rounded-2xl border bg-white border-gray-200 text-left relative overflow-hidden">
+              <div className="flex justify-between items-start w-full">
+                <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Ejecutadas totales</span>
+                <span className="p-1.5 bg-emerald-50 text-emerald-600 rounded-xl">
+                  <Icon name="check" className="w-5 h-5" />
+                </span>
+              </div>
+              <div className="mt-4">
+                <p className="text-3xl font-extrabold text-emerald-600">{metrics.totalExecuted}</p>
+                <p className="text-[10px] text-gray-500 mt-1">Suma del logro real acumulado</p>
+              </div>
+            </div>
+
+            {/* KPI: Completadas */}
+            <button
+              onClick={() => setActiveFilterCard('Completas')}
+              className={`flex flex-col justify-between p-4 rounded-2xl border transition-all text-left relative overflow-hidden ${
+                activeFilterCard === 'Completas'
+                  ? 'bg-white border-emerald-500 shadow-xl shadow-emerald-100 scale-[1.02]'
+                  : 'bg-white border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex justify-between items-start w-full">
+                <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Completas (100%)</span>
+                <span className="p-1.5 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-bold">100%</span>
+              </div>
+              <div className="mt-4">
+                <p className="text-3xl font-extrabold text-gray-955">{metrics.counts.complete}</p>
+                <p className="text-[10px] text-gray-500 mt-1">Actividades finalizadas</p>
+              </div>
+              {activeFilterCard === 'Completas' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-500"></div>}
+            </button>
+
+            {/* KPI: Sin Iniciar */}
+            <button
+              onClick={() => setActiveFilterCard('Pendientes')}
+              className={`flex flex-col justify-between p-4 rounded-2xl border transition-all text-left relative overflow-hidden ${
+                activeFilterCard === 'Pendientes'
+                  ? 'bg-white border-rose-500 shadow-xl shadow-rose-100 scale-[1.02]'
+                  : 'bg-white border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex justify-between items-start w-full">
+                <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider">Pendientes (0%)</span>
+                <span className="p-1.5 bg-rose-50 text-rose-600 rounded-xl">
+                  <Icon name="clock" className="w-5 h-5" />
+                </span>
+              </div>
+              <div className="mt-4">
+                <p className="text-3xl font-extrabold text-gray-955">{metrics.counts.pending}</p>
+                <p className="text-[10px] text-gray-500 mt-1">Tareas en progreso cero</p>
+              </div>
+              {activeFilterCard === 'Pendientes' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-rose-500"></div>}
+            </button>
+
+            {/* KPI: Porcentaje de Cumplimiento */}
+            <div className="col-span-2 lg:col-span-1 flex flex-col justify-between p-4 rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white relative overflow-hidden shadow-sm">
+              <div className="flex justify-between items-start">
+                <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">% Cumplimiento Global</span>
+                <span className="p-1 bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">%</span>
+              </div>
+              <div className="mt-4 flex items-baseline gap-2">
+                <p className="text-4xl font-extrabold text-indigo-600 tracking-tight">{metrics.completionRate}%</p>
+              </div>
+              <div className="w-full bg-indigo-100 h-2 rounded-full mt-3 overflow-hidden">
+                <div 
+                  className="bg-indigo-600 h-full rounded-full transition-all duration-700" 
+                  style={{ width: `${metrics.completionRate}%` }}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* LÍNEA DE TIEMPO MENSUAL */}
+          <section className="bg-white border border-gray-200 rounded-2xl p-4 md:p-6 mb-6 shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4 border-b border-gray-100 pb-4">
+              <div className="max-w-xl">
+                <h2 className="text-lg font-bold text-gray-955 flex items-center gap-2">
+                  <span className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600">
+                    <Icon name="calendar" className="w-4 h-4" />
+                  </span>
+                  Línea de Tiempo Mensual: Control de Metas
+                </h2>
+                <p className="text-gray-505 text-xs mt-1">
+                  Visualización y análisis del progreso mensual. Haz clic sobre un mes para aislar o añadir meses correspondientes al filtro de manera múltiple.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Selector interactivo de vista: Metas vs Cantidad de Actividades */}
+                <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => setTimelineView('metas')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                      timelineView === 'metas' 
+                        ? 'bg-indigo-600 text-white shadow-sm' 
+                        : 'text-gray-500 hover:text-gray-800'
+                    }`}
+                  >
+                    Metas (Plan vs Logro)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTimelineView('volumen')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                      timelineView === 'volumen' 
+                        ? 'bg-indigo-600 text-white shadow-sm' 
+                        : 'text-gray-500 hover:text-gray-800'
+                    }`}
+                  >
+                    Cant. Actividades
+                  </button>
+                </div>
+
+                {/* Leyenda Dinámica de la Línea de Tiempo */}
+                <div className="flex flex-wrap items-center gap-4 text-xs font-semibold">
+                  {timelineView === 'metas' ? (
+                    <>
+                      <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-indigo-500 rounded"></span> Programado</span>
+                      <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-emerald-500 rounded"></span> Ejecutado</span>
+                    </>
+                  ) : (
+                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-indigo-600 rounded"></span> Actividades</span>
+                  )}
+                  <span className="text-gray-600 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
+                    Filtro: <strong className="text-indigo-600 font-bold">{selectedMonths.length === 0 ? 'Año Completo' : `${selectedMonths.length} Mes(es)`}</strong>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 sm:grid-cols-6 xl:grid-cols-12 gap-3 pt-3">
+              {monthlyTimelineData.map((data) => {
+                const isSelected = selectedMonths.includes(data.month);
+                const hasData = data.programmed > 0;
+                const barHeightProg = hasData ? (data.programmed / maxMonthlyVal) * 100 : 0;
+                const barHeightExec = hasData ? (data.executed / maxMonthlyVal) * 105 : 0;
+
+                // Nueva barra de volumen
+                const barHeightCount = data.count > 0 ? (data.count / maxMonthlyCount) * 100 : 0;
+
+                return (
+                  <div 
+                    key={data.month}
+                    onClick={() => {
+                      if (isSelected) {
+                        setSelectedMonths(selectedMonths.filter(m => m !== data.month));
+                      } else {
+                        setSelectedMonths([...selectedMonths, data.month]);
+                      }
+                      setActiveFilterCard('Todas');
+                    }}
+                    className={`flex flex-col items-center justify-end p-2.5 rounded-xl cursor-pointer transition-all ${
+                      isSelected 
+                        ? 'bg-indigo-50 ring-2 ring-indigo-500 shadow-lg shadow-indigo-100' 
+                        : 'bg-gray-50/50 hover:bg-gray-50 border border-gray-200'
+                    }`}
+                  >
+                    <div className="h-28 w-full flex items-end justify-center gap-2 mb-2 relative group">
+                      
+                      {timelineView === 'metas' ? (
+                        <>
+                          <div className="absolute bottom-full mb-2 bg-gray-955 text-white text-[10px] p-2 rounded-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-250 z-10 w-28 text-center shadow-2xl border border-gray-800">
+                            <p className="font-bold border-b border-gray-800 pb-0.5 mb-1 text-indigo-300">Mes: {data.month}</p>
+                            <p className="text-gray-300">Plan: <span className="font-mono text-indigo-400 font-bold">{data.programmed}</span></p>
+                            <p className="text-gray-300">Logro: <span className="font-mono text-emerald-400 font-bold">{data.executed}</span></p>
+                            <p className="text-amber-400 font-bold mt-1 text-[9px] bg-amber-50/10 rounded py-0.5">{data.percentage}% de Cumpl.</p>
+                          </div>
+
+                          <div className="w-3 rounded-t bg-gray-100 flex flex-col justify-end h-full relative">
+                            <div className="bg-indigo-500 rounded-t transition-all duration-750" style={{ height: `${barHeightProg}%` }} />
+                          </div>
+
+                          <div className="w-3 rounded-t bg-gray-100 flex flex-col justify-end h-full relative">
+                            <div className="bg-emerald-500 rounded-t transition-all duration-750" style={{ height: `${barHeightExec}%` }} />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {/* Tooltip específico para Volumen de Actividades */}
+                          <div className="absolute bottom-full mb-2 bg-gray-950 text-white text-[10px] p-2 rounded-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-250 z-10 w-28 text-center shadow-2xl border border-gray-800">
+                            <p className="font-bold border-b border-gray-800 pb-0.5 mb-1 text-indigo-300">Mes: {data.month}</p>
+                            <p className="text-gray-300">Actividades: <span className="font-mono text-indigo-400 font-bold">{data.count}</span></p>
+                            <p className="text-amber-400 font-bold mt-1 text-[9px] bg-amber-50/10 rounded py-0.5">{data.percentage}% promedio</p>
+                          </div>
+
+                          <div className="w-5 rounded-t bg-gray-100 flex flex-col justify-end h-full relative">
+                            <div className="bg-indigo-600 rounded-t transition-all duration-750" style={{ height: `${barHeightCount}%` }} />
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <span className="text-xs font-bold text-gray-800">{data.month}</span>
+                    
+                    {timelineView === 'metas' ? (
+                      <span className={`text-[9px] font-bold mt-1 px-1.5 py-0.5 rounded ${
+                        data.percentage === 100 ? 'bg-emerald-100 text-emerald-800' : data.percentage > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-200 text-gray-500'
+                      }`}>
+                        {hasData ? `${data.percentage}%` : 'Sin datos'}
+                      </span>
+                    ) : (
+                      <span className={`text-[9px] font-bold mt-1 px-1.5 py-0.5 rounded ${
+                        data.count > 0 ? 'bg-indigo-100 text-indigo-800' : 'bg-gray-200 text-gray-500'
+                      }`}>
+                        {data.count > 0 ? `${data.count} ${data.count === 1 ? 'Act.' : 'Acts.'}` : 'Sin datos'}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* SUB-PANEL GRÁFICO */}
+          <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            
+            {/* Cumplimiento por Área */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-5 lg:col-span-2 shadow-sm">
+              <div className="mb-4">
+                <h3 className="font-bold text-gray-955 flex items-center gap-2">
+                  <Icon name="building" className="w-4 h-4 text-indigo-600" />
+                  Cumplimiento por Departamento ({selectedMonths.length === 0 ? 'Año Completo' : `Meses: ${selectedMonths.join(', ')}`})
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">Eficiencia operativa de áreas activas</p>
+              </div>
+
+              <div className="space-y-4">
+                {departmentData.map((data) => {
+                  const hasData = data.programmed > 0;
+                  const percentOfMaxProg = hasData ? (data.programmed / maxDeptVal) * 100 : 0;
+                  const percentOfMaxExec = hasData ? (data.executed / maxDeptVal) * 100 : 0;
+
+                  return (
+                    <div key={data.department} className="space-y-1">
+                      <div className="flex justify-between text-xs font-semibold">
+                        <span className="text-gray-800">{data.department}</span>
+                        <span className="text-gray-505 flex gap-2 items-center">
+                          <span>Prog: <strong>{data.programmed}</strong></span>
+                          <span>•</span>
+                          <span>Ejec: <strong className="text-emerald-600">{data.executed}</strong></span>
+                          {hasData && (
+                            <span className="bg-indigo-50 text-indigo-600 px-1.5 rounded py-0.5 border border-indigo-100 font-bold">
+                              {data.percentage}% Cumpl.
+                            </span>
+                          )}
+                        </span>
+                      </div>
+
+                      <div className="relative h-6 bg-gray-50 rounded-lg overflow-hidden flex flex-col justify-center px-2 gap-0.5 border border-gray-100">
+                        <div className="h-1.5 bg-indigo-500/80 rounded transition-all duration-750" style={{ width: `${percentOfMaxProg}%` }} />
+                        <div className="h-1.5 bg-emerald-500/80 rounded transition-all duration-750" style={{ width: `${percentOfMaxExec}%` }} />
+                        {!hasData && (
+                          <span className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400 italic">
+                            Sin actividades registradas en esta área
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Desglose Métricas del Set */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-4">
+                  <h3 className="font-bold text-gray-955 flex items-center gap-2">
+                    <Icon name="trending" className="w-4 h-4 text-indigo-600" />
+                    Métricas del Set
+                  </h3>
+                  
+                  <div className="flex bg-gray-550 p-1 rounded-lg border border-gray-200">
+                    <button
+                      onClick={() => setActiveTabCharts('estados')}
+                      className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition ${
+                        activeTabCharts === 'estados' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-800'
+                      }`}
+                    >
+                      Estados
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveTabCharts('periodicidad');
+                      }}
+                      className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition ${
+                        activeTabCharts === 'periodicidad' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-800'
+                      }`}
+                    >
+                      Período
+                    </button>
+                  </div>
+                </div>
+
+                {metrics.totalActivities > 0 ? (
+                  <div className="space-y-4">
+                    {activeTabCharts === 'estados' ? (
+                      <>
+                        <div>
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full"></span>
+                              Completas (100%)
+                            </span>
+                            <span className="font-semibold text-gray-700">
+                              {metrics.counts.complete} ({Math.round(metrics.counts.complete / metrics.totalActivities * 100)}%)
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-50 h-2 rounded-full overflow-hidden border border-gray-100">
+                            <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${(metrics.counts.complete / metrics.totalActivities) * 100}%` }}></div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 bg-amber-400 rounded-full"></span>
+                              En Progreso Parcial
+                            </span>
+                            <span className="font-semibold text-gray-700">
+                              {metrics.counts.partial} ({Math.round(metrics.counts.partial / metrics.totalActivities * 100)}%)
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-50 h-2 rounded-full overflow-hidden border border-gray-100">
+                            <div className="bg-amber-400 h-full rounded-full" style={{ width: `${(metrics.counts.partial / metrics.totalActivities) * 100}%` }}></div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 bg-rose-500 rounded-full"></span>
+                              Pendientes (0%)
+                            </span>
+                            <span className="font-semibold text-gray-700">
+                              {metrics.counts.pending} ({Math.round(metrics.counts.pending / metrics.totalActivities * 100)}%)
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-50 h-2 rounded-full overflow-hidden border border-gray-100">
+                            <div className="bg-rose-500 h-full rounded-full" style={{ width: `${(metrics.counts.pending / metrics.totalActivities) * 100}%` }}></div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {PERIODICITIES.map((periodKey) => {
+                          const count = metrics.countPeriodicity[periodKey] || 0;
+                          const percentage = metrics.totalActivities > 0 ? Math.round((count / metrics.totalActivities) * 100) : 0;
+
+                          let colorBadge = "bg-indigo-500";
+                          if (periodKey === "Bimestral") colorBadge = "bg-purple-500";
+                          if (periodKey === "Trimestral") colorBadge = "bg-teal-500";
+                          if (periodKey === "Semestral") colorBadge = "bg-amber-550";
+
+                          return (
+                            <div key={periodKey}>
+                              <div className="flex justify-between text-xs mb-1">
+                                <span className="flex items-center gap-2">
+                                  <span className={`w-2.5 h-2.5 ${colorBadge} rounded-full`}></span>
+                                  {periodKey}
+                                </span>
+                                <span className="font-semibold text-gray-700">
+                                  {count} {count === 1 ? 'actividad' : 'actividades'} ({percentage}%)
+                                </span>
+                              </div>
+                              <div className="w-full bg-gray-50 h-2 rounded-full overflow-hidden border border-gray-100">
+                                <div className={`${colorBadge} h-full rounded-full`} style={{ width: `${percentage}%` }}></div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 italic text-center py-8">Sin registros que cuantificar</p>
+                )}
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-gray-150 text-[11px] text-gray-500 flex items-center gap-1.5">
+                <Icon name="alert" className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                Los desgloses y porcentajes se sincronizan automáticamente con tus filtros superiores.
+              </div>
+            </div>
+
+          </section>
+
+          {/* SECCIÓN DE REGISTRO GENERAL */}
+          <section className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 mb-4 border-b border-gray-200 gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-gray-955 flex items-center gap-2">
+                  <span className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600">
+                    <Icon name="edit" className="w-4 h-4" />
+                  </span>
+                  Registro General de Actividades Co-programadas ({displayActivities.length})
+                </h2>
+                <p className="text-gray-505 text-xs mt-1">
+                  Mapeo de metas individuales por área. {currentUserProfile?.role === 'admin' ? 'Modo de edición total activo.' : `Solo puedes proponer o editar metas para: "${currentUserProfile?.department}".`}
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    if (departments.length === 0) {
+                      triggerToast("⚠️ Primero debes agregar al menos un área de trabajo.");
+                      setShowDeptModal(true);
+                      return;
+                    }
+                    setShowAddForm(!showAddForm);
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-50 text-white font-semibold text-xs md:text-sm px-4 py-2 rounded-xl transition flex items-center gap-2 shadow-lg shadow-indigo-500/10"
+                >
+                  <Icon name="plus" className="w-4 h-4" />
+                  {showAddForm ? 'Cerrar Registro' : 'Programar Actividad'}
+                </button>
+              </div>
+            </div>
+
+            {/* Formulario de nueva actividad */}
+            {showAddForm && (
+              <form onSubmit={handleAddActivity} className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-xl grid grid-cols-1 md:grid-cols-3 gap-4 animate-slide-in-up">
+                <div className="md:col-span-3">
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-indigo-600 flex items-center gap-1.5">
+                    <Icon name="plus" className="w-4 h-4" />
+                    Crear Tarea Programada
+                  </h3>
+                  <p className="text-[10px] text-gray-550 mt-0.5">Se registrará bajo la firma de: {currentUserProfile?.name}.</p>
+                </div>
+                
+                <div>
+                  <label className="block text-xs text-gray-500 font-bold mb-1 uppercase tracking-wider">Nombre de Actividad</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Ej. Conciliación de cuentas de cobro"
+                    value={newActivity.name}
+                    onChange={e => setNewActivity({...newActivity, name: e.target.value})}
+                    className="w-full bg-white text-gray-955 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-500 font-bold mb-1 uppercase tracking-wider">Área Responsable</label>
+                  <select
+                    disabled={currentUserProfile?.role !== 'admin'}
+                    value={currentUserProfile?.role === 'admin' ? newActivity.department : currentUserProfile?.department}
+                    onChange={e => setNewActivity({...newActivity, department: e.target.value})}
+                    className="w-full bg-white disabled:opacity-60 text-gray-955 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {currentUserProfile?.role === 'admin' ? (
+                      departments.map(dept => (
+                        <option key={dept.id} value={dept.name}>{dept.name}</option>
+                      ))
+                    ) : (
+                      <option value={currentUserProfile?.department}>{currentUserProfile?.department}</option>
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-500 font-bold mb-1 uppercase tracking-wider">Periodicidad</label>
+                  <select
+                    value={newActivity.periodicity}
+                    onChange={e => setNewActivity({...newActivity, periodicity: e.target.value})}
+                    className="w-full bg-white text-gray-955 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {PERIODICITIES.map(per => (
+                      <option key={per} value={per}>{per}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* NUEVO DISEÑO: SELECCIÓN DE MESES MEDIANTE CASILLAS DE VERIFICACIÓN (CHECKBOXES) */}
+                <div className="md:col-span-3">
+                  <label className="block text-xs text-gray-500 font-bold mb-2 uppercase tracking-wider">Meses Programados (Marca uno o varios meses)</label>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 bg-white border border-gray-200 p-3 rounded-lg">
+                    {MONTHS_LIST.map(mes => {
+                      const isChecked = formMonths.includes(mes);
+                      return (
+                        <label key={mes} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer select-none transition-all ${
+                          isChecked 
+                            ? 'bg-indigo-50 border-indigo-300 text-indigo-900 shadow-sm shadow-indigo-100/30' 
+                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
+                        }`}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {
+                              if (isChecked) {
+                                setFormMonths(formMonths.filter(m => m !== mes));
+                              } else {
+                                setFormMonths([...formMonths, mes]);
+                              }
+                            }}
+                            className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <span className="text-xs font-semibold">{mes}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-500 font-bold mb-1 uppercase tracking-wider">Planificados (Meta por Mes)</label>
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    value={newActivity.programmed}
+                    onChange={e => setNewActivity({...newActivity, programmed: Math.max(1, parseInt(e.target.value) || 1)})}
+                    className="w-full bg-white text-gray-955 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-500 font-bold mb-1 uppercase tracking-wider">
+                    Ejecutados (Logro inicial) {currentUserProfile?.role !== 'admin' && '🔒'}
+                  </label>
+                  <input
+                    disabled={currentUserProfile?.role !== 'admin'}
+                    type="number"
+                    min="0"
+                    placeholder={currentUserProfile?.role !== 'admin' ? "Solo Admins" : "Ejecuciones"}
+                    value={currentUserProfile?.role === 'admin' ? newActivity.executed : ''}
+                    onChange={e => setNewActivity({...newActivity, executed: Math.max(0, parseInt(e.target.value) || 0)})}
+                    className="w-full bg-white disabled:opacity-50 text-gray-955 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  {currentUserProfile?.role !== 'admin' && (
+                    <span className="text-[9px] text-indigo-600 block mt-1 font-semibold">Tu avance será auditado y registrado por el Administrador.</span>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-550 font-bold mb-1 uppercase tracking-wider">Link de Evidencia (Drive / Sharepoint)</label>
+                  <input
+                    type="text"
+                    placeholder="https://docs.google.com/..."
+                    value={newActivity.evidence}
+                    onChange={e => setNewActivity({...newActivity, evidence: e.target.value})}
+                    className="w-full bg-white text-gray-955 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="md:col-span-3">
+                  <label className="block text-xs text-gray-550 font-bold mb-1 uppercase tracking-wider">Observaciones / Notas</label>
+                  <input
+                    type="text"
+                    placeholder="Por ejemplo: dependiente de aprobación de gerencia..."
+                    value={newActivity.notes}
+                    onChange={e => setNewActivity({...newActivity, notes: e.target.value})}
+                    className="w-full bg-white text-gray-955 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="md:col-span-3 flex justify-end gap-2 pt-2 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddForm(false)}
+                    className="px-4 py-2 bg-white hover:bg-gray-50 text-xs font-bold text-gray-600 rounded-xl transition border border-gray-200"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-550 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-indigo-500/15"
+                  >
+                    Programar y Compartir
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* TABLA PRINCIPAL */}
+            <div className="overflow-x-auto">
+              {displayActivities.length > 0 ? (
+                <table className="w-full text-left border-collapse min-w-[1000px]">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                      <th className="py-3 px-4">Actividad</th>
+                      <th className="py-3 px-4">Área</th>
+                      <th className="py-3 px-4">Periodicidad</th>
+                      <th className="py-3 px-4">Mes</th>
+                      <th className="py-3 px-4 text-center">Cumplimiento (Logro/Meta)</th>
+                      <th className="py-3 px-4 text-center">Estado</th>
+                      <th className="py-3 px-4">Observaciones</th>
+                      <th className="py-3 px-4">Evidencia</th>
+                      <th className="py-3 px-4">Creado por</th>
+                      <th className="py-3 px-4 text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-150 text-sm">
+                    {displayActivities.map((act) => {
+                      const isEditing = editingId === act.id;
+                      const completionPercentage = act.programmed > 0 ? Math.round((act.executed / act.programmed) * 100) : 0;
+                      
+                      const isUserAdmin = currentUserProfile?.role === 'admin';
+                      const canUserEditThisAct = isUserAdmin || currentUserProfile?.department === act.department;
+
+                      let badgePeriodicityStyle = "bg-indigo-50 text-indigo-700 border-indigo-100";
+                      if (act.periodicity === "Bimestral") badgePeriodicityStyle = "bg-purple-50 text-purple-700 border-purple-100";
+                      if (act.periodicity === "Trimestral") badgePeriodicityStyle = "bg-teal-50 text-teal-700 border-teal-100";
+                      if (act.periodicity === "Semestral") badgePeriodicityStyle = "bg-amber-50 text-amber-700 border-amber-100";
+
+                      return (
+                        <tr 
+                          key={act.id} 
+                          className={`hover:bg-gray-50/50 transition-colors ${
+                            completionPercentage === 100 ? 'bg-emerald-50/30' : completionPercentage > 0 ? 'bg-amber-50/30' : 'bg-rose-50/30'
+                          } ${!canUserEditThisAct ? 'opacity-70' : ''}`}
+                        >
+                          <td className="py-3 px-4 font-medium text-gray-900">
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                defaultValue={act.name}
+                                id={`edit-name-${act.id}`}
+                                className="bg-white border border-gray-200 rounded px-2.5 py-1 text-xs text-gray-955 w-full focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                              />
+                            ) : (
+                              <div className="max-w-[180px] truncate font-semibold text-gray-900" title={act.name}>
+                                {act.name}
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4">
+                            {isEditing ? (
+                              <select
+                                disabled={!isUserAdmin}
+                                id={`edit-dept-${act.id}`}
+                                defaultValue={act.department}
+                                className="bg-white disabled:opacity-60 border border-gray-200 rounded px-2 py-1 text-xs text-gray-955 cursor-pointer focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                              >
+                                {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                              </select>
+                            ) : (
+                              <span className="px-2.5 py-1 bg-gray-100 rounded-lg text-[10px] text-indigo-700 font-bold uppercase border border-indigo-100">
+                                {act.department}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4">
+                            {isEditing ? (
+                              <select
+                                id={`edit-periodicity-${act.id}`}
+                                defaultValue={act.periodicity}
+                                className="bg-white border border-gray-200 rounded px-2 py-1 text-xs text-gray-955 cursor-pointer focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                              >
+                                {PERIODICITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                              </select>
+                            ) : (
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${badgePeriodicityStyle}`}>
+                                {act.periodicity}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4 text-gray-700">
+                            {isEditing ? (
+                              <select
+                                id={`edit-month-${act.id}`}
+                                defaultValue={act.month}
+                                className="bg-white border border-gray-200 rounded px-2 py-1 text-xs text-gray-955 cursor-pointer focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                              >
+                                {MONTHS_LIST.map(m => <option key={m} value={m}>{m}</option>)}
+                              </select>
+                            ) : (
+                              <span className="font-bold text-xs bg-gray-100 px-2.5 py-1 rounded-md text-gray-600 border border-gray-150">
+                                {act.month}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4">
+                            {isEditing ? (
+                              <div className="flex items-center gap-1.5 justify-center">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  id={`edit-prog-${act.id}`}
+                                  defaultValue={act.programmed}
+                                  className="bg-white border border-gray-200 rounded w-14 px-1.5 py-1 text-xs text-center text-gray-955 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                />
+                                <span className="text-gray-400">/</span>
+                                <input
+                                  disabled={!isUserAdmin}
+                                  type="number"
+                                  min="0"
+                                  id={`edit-exec-${act.id}`}
+                                  placeholder={!isUserAdmin ? "🔒" : "Logro"}
+                                  defaultValue={act.executed}
+                                  className="bg-white disabled:opacity-50 border border-gray-200 rounded w-14 px-1.5 py-1 text-xs text-center text-gray-955 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center">
+                                <div className="flex justify-between w-full max-w-[120px] text-[10px] font-bold font-mono text-gray-500 mb-1">
+                                  <span className="text-emerald-600">Logro: {act.executed}</span>
+                                  <span>Meta: {act.programmed}</span>
+                                </div>
+                                <div className="w-full max-w-[120px] bg-gray-100 h-1.5 rounded-full overflow-hidden border border-gray-150">
+                                  <div 
+                                    className={`h-full rounded-full transition-all ${
+                                      completionPercentage === 100 ? 'bg-emerald-500' : completionPercentage > 0 ? 'bg-amber-400' : 'bg-rose-300'
+                                    }`}
+                                    style={{ width: `${completionPercentage}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4 text-center">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              completionPercentage === 100 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : completionPercentage > 0 ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${
+                                completionPercentage === 100 ? 'bg-emerald-500' : completionPercentage > 0 ? 'bg-amber-500' : 'bg-rose-500'
+                              }`}></span>
+                              {completionPercentage === 100 ? 'Completado' : completionPercentage > 0 ? 'Ejecución Parcial' : 'Pendiente'}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-4 text-xs text-gray-505 italic">
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                defaultValue={act.notes}
+                                id={`edit-notes-${act.id}`}
+                                className="bg-white border border-gray-200 rounded px-2.5 py-1 text-xs text-gray-955 w-full focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                              />
+                            ) : (
+                              <div className="max-w-[140px] truncate text-gray-500" title={act.notes || '—'}>
+                                {act.notes || '—'}
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4">
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                placeholder="Enlace de Evidencia"
+                                defaultValue={act.evidence || ''}
+                                id={`edit-evidence-${act.id}`}
+                                className="bg-white border border-gray-200 rounded px-2 py-1 text-xs text-gray-955 w-full focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                              />
+                            ) : act.evidence ? (
+                              <a
+                                href={act.evidence.startsWith('http') ? act.evidence : `https://${act.evidence}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-100 transition-all"
+                              >
+                                <Icon name="external" className="w-3.5 h-3.5" />
+                                Evidencia
+                              </a>
+                            ) : (
+                              <span className="text-gray-400 italic text-[11px]">Sin soporte</span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4 text-xs text-gray-500 font-medium">
+                            <div className="flex flex-col">
+                              <span className="truncate max-w-[110px]" title={act.createdBy}>👤 {act.createdBy || 'No registrado'}</span>
+                              {act.modifiedBy && <span className="text-[9px] text-indigo-600 truncate max-w-[110px]" title={`Última edición por: ${act.modifiedBy}`}>Mod: {act.modifiedBy}</span>}
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-4 text-right">
+                            {isEditing ? (
+                              <div className="flex justify-end gap-1.5">
+                                <button
+                                  onClick={() => setEditingId(null)}
+                                  className="p-1 bg-white hover:bg-gray-100 border border-gray-200 text-gray-500 rounded transition"
+                                >
+                                  <Icon name="x" className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const updated = {
+                                      name: document.getElementById(`edit-name-${act.id}`).value,
+                                      department: document.getElementById(`edit-dept-${act.id}`).value,
+                                      periodicity: document.getElementById(`edit-periodicity-${act.id}`).value,
+                                      month: document.getElementById(`edit-month-${act.id}`).value,
+                                      programmed: Number(document.getElementById(`edit-prog-${act.id}`).value),
+                                      executed: isUserAdmin ? Number(document.getElementById(`edit-exec-${act.id}`).value) : act.executed,
+                                      notes: document.getElementById(`edit-notes-${act.id}`).value,
+                                      evidence: document.getElementById(`edit-evidence-${act.id}`).value,
+                                    };
+                                    saveEdit(act.id, updated, act.department);
+                                  }}
+                                  className="p-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded transition border border-emerald-100"
+                                >
+                                  <Icon name="check" className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex justify-end gap-1.5">
+                                {isUserAdmin && (
+                                  <>
+                                    <button
+                                      onClick={() => handleQuickProgress(act.id, act.department, 1)}
+                                      disabled={act.executed >= act.programmed}
+                                      className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-20 text-emerald-700 rounded text-xs font-bold transition border border-emerald-100"
+                                    >
+                                      +1
+                                    </button>
+                                    <button
+                                      onClick={() => handleQuickProgress(act.id, act.department, -1)}
+                                      disabled={act.executed <= 0}
+                                      className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 disabled:opacity-20 text-amber-700 rounded text-xs font-bold transition border border-amber-100"
+                                    >
+                                      -1
+                                    </button>
+                                  </>
+                                )}
+
+                                {canUserEditThisAct ? (
+                                  <>
+                                    <button
+                                      onClick={() => setEditingId(act.id)}
+                                      className="p-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded border border-indigo-100 transition"
+                                    >
+                                      <Icon name="edit" className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteActivity(act.id, act.department)}
+                                      className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded border border-rose-100 transition"
+                                    >
+                                      <Icon name="trash" className="w-4 h-4" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="text-[10px] text-gray-400 font-bold self-center cursor-help" title="Sin privilegios para editar esta área.">🔒 Bloqueado</span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-center py-12 text-gray-400 bg-gray-50/50 rounded-xl border border-gray-150">
+                  <p className="text-lg font-bold text-gray-700">No se encontraron actividades registradas</p>
+                  <p className="text-sm">Prueba ajustando tus selectores o agrega un registro.</p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* FOOTER */}
+          <footer className="mt-8 text-center text-xs text-gray-500 flex flex-col sm:flex-row justify-between items-center border-t border-gray-200 pt-4 gap-2">
+            <p>Dashboard de Gestión de Metas Interdepartamental • Todos los cambios son compartidos en tiempo real.</p>
+            <p className="font-mono text-[10px]">AppID: {appId}</p>
+          </footer>
+        </div>
+      );
+    }
+
+    // Renderizar la aplicación utilizando ReactDOM 18 Client API
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
