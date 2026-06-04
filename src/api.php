@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 }
 
 // Configuración de la base de datos
-$db_host = '2.25.137.200';
+$db_host = 'db';
 $db_user = 'root';     
 $db_pass = 'Utipec2026*$';
 $db_name = 'indicadores';
